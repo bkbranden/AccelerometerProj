@@ -44,5 +44,4 @@ void ConfigureTimerA(void)
 __interrupt void TimerA0_routine(void)
 {
     g1msTimer++;
-    Read_Adc();
 }
