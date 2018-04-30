@@ -6,6 +6,7 @@
 #include "spi.h"
 #include "ADC.h"
 #include "debounce.h"
+#include "LED_display.h"
 
 #define CORDIC_GAIN 0.607252935103139
 #define CORDIC_GAIN_X_EQUALS_Y (float) (sqrt(2)/2)
@@ -17,16 +18,22 @@ void CalculateAve(void);
 void CalibrateACC(void);
 void CalculateOrigins(void);
 void CenterXYZ(void);
-void CalculateAngleHyp(void);
+void CalculateAngleHypPhi(void);
+void ManageSoftwareTimers(void);
+void dispLED(void);
 
 // Global variables
 unsigned int g1msTimer = 0;
+unsigned int g1msTimeout = 0;
 unsigned int calibrationCount = 0;
 unsigned int X_Axis_Sum, Y_Axis_Sum, Z_Axis_Sum;
 signed int X_Ave, Y_Ave, Z_Ave;
 unsigned int Xmax, Xmin, Ymax, Ymin, Zmax, Zmin;
 unsigned int Xorigin, Yorigin, Zorigin;
 volatile float angle, hypotenuse, phi;
+unsigned int counterA =0;
+unsigned int counterB = 0;
+unsigned int counterC = 0;
 
 void main(void)
 {
@@ -39,20 +46,23 @@ void main(void)
     ConfigureTimerA();
     InitializeSPI();
     ConfigureADC();
-
+    InitializeLEDDisplay();
     _enable_interrupts();
 
     //Run through the the calibration process. Xmax, Xmin, Ymax, Ymin, Zmax, Zmin.
     CalibrateACC();
 
-    //Set the Origin Point
-    CalculateOrigins();
 
-    SPISendByte(0x00);
-    TOGGLE_LATCH;
+
+    SetLEDDisplay(0x00);
+
 
     while (1) {
+        counterA++;
+        counterB++;
+        counterC++;
         CalculateAngleHypPhi();
+
     }
 }
 
@@ -75,8 +85,8 @@ void CalibrateACC(void){
     // Initialize the pushbutton switch.
     InitializeSwitch(&PushButton,(char *) &PUSHBUTTON_PORT_IN,(unsigned char) PUSHBUTTON_BIT,
             HIGH_THRESHOLD,LOW_THRESHOLD);
-    SPISendByte(0x80);
-    TOGGLE_LATCH;
+    SetLEDDisplay(0x80);
+
     while(calibrationCount == 0){
         if(Debouncer(&PushButton) == High){
             calibrationCount++;
@@ -84,8 +94,8 @@ void CalibrateACC(void){
             Xmax = X_Ave;
         }
     }
-    SPISendByte(0x08);
-    TOGGLE_LATCH;
+    SetLEDDisplay(0x08);
+
     while(Debouncer(&PushButton) == High);
     while(calibrationCount == 1){
         if(Debouncer(&PushButton) == High){
@@ -94,8 +104,8 @@ void CalibrateACC(void){
             Xmin = X_Ave;
         }
     }
-    SPISendByte(0x02);
-    TOGGLE_LATCH;
+    SetLEDDisplay(0x02);
+
     while(Debouncer(&PushButton) == High);
     while(calibrationCount == 2){
         if(Debouncer(&PushButton) == High){
@@ -104,8 +114,8 @@ void CalibrateACC(void){
             Ymax = Y_Ave;
         }
     }
-    SPISendByte(0x20);
-    TOGGLE_LATCH;
+    SetLEDDisplay(0x20);
+
     while(Debouncer(&PushButton) == High);
     while(calibrationCount == 3){
         if(Debouncer(&PushButton) == High){
@@ -114,8 +124,8 @@ void CalibrateACC(void){
             Ymin = Y_Ave;
         }
     }
-    SPISendByte(0xAA);
-    TOGGLE_LATCH;
+    SetLEDDisplay(0xAA);
+
     while(Debouncer(&PushButton) == High);
     while(calibrationCount == 4){
         if(Debouncer(&PushButton) == High){
@@ -124,8 +134,8 @@ void CalibrateACC(void){
             Zmax = Z_Ave;
         }
     }
-    SPISendByte(0x55);
-    TOGGLE_LATCH;
+    SetLEDDisplay(0x55);
+
     while(Debouncer(&PushButton) == High);
     while(calibrationCount == 5){
         if(Debouncer(&PushButton) == High){
@@ -134,6 +144,8 @@ void CalibrateACC(void){
             Zmin = Z_Ave;
         }
     }
+    //Set the Origin Point
+    CalculateOrigins();
 }
 
 void CalculateOrigins(void){
@@ -195,5 +207,373 @@ void CalculateAngleHypPhi(void){
         Cordic((calculations *)&calcs,ATAN_HYP);
         phi = ((float) calcs.angle)/MUL - 180.0;
     }
-    _nop();
+    dispLED();
+}
+
+void ManageSoftwareTimers(void)
+{
+    if (g1msTimeout) {
+        g1msTimeout--;
+        g1msTimer++;
+
+    }
+}
+
+void dispLED(void){
+    if(angle <= 22.5 && angle >= -22.5){
+
+        if ((phi >= 60 && phi <= 90) || (phi >=-90 && phi <= -60)){
+            if(counterC >=40){
+                SetLEDDisplay(0x80);
+                counterC=0;
+            }
+            if (counterA >= 80){
+               SetLEDDisplay(0x41);
+               counterA = 0;
+             }
+            if (counterB >= 120){
+               SetLEDDisplay(0x22);
+               counterB = 0;
+            }
+        }
+        if ((phi >= 30 && phi <= 60) || (phi >=-60 && phi <= -30)){
+            if(counterC >=15){
+                SetLEDDisplay(0x80);
+                counterC=0;
+            }
+            if (counterA >= 30){
+               SetLEDDisplay(0x41);
+               counterA = 0;
+             }
+            if (counterB >= 45){
+               SetLEDDisplay(0x22);
+               counterB = 0;
+            }
+        }
+        if ((phi >= 0 && phi <= 30) || (phi >=-30 && phi <= 0)){
+            if(counterC >=1){
+                SetLEDDisplay(0x80);
+                counterC=0;
+            }
+            if (counterA >= 5){
+               SetLEDDisplay(0x41);
+               counterA = 0;
+             }
+            if (counterB >= 15){
+               SetLEDDisplay(0x22);
+               counterB = 0;
+            }
+        }
+
+    }
+    if(angle <= 67.5 && angle >= 22.5){
+            if ((phi >= 60 && phi <= 90) || (phi >=-90 && phi <= -60)){
+                if(counterC >= 40){
+                    SetLEDDisplay(0x01);
+                    counterC = 0;
+                }
+                if (counterA >= 80){
+                  SetLEDDisplay(0x82);
+                  counterA = 0;
+                }
+               if (counterB >= 120){
+                  SetLEDDisplay(0x44);
+                  counterB = 0;
+               }
+            }
+            if ((phi >= 30 && phi <= 60) || (phi >=-60 && phi <= -30)){
+                    if(counterC >= 15){
+                        SetLEDDisplay(0x01);
+                        counterC = 0;
+                    }
+                    if (counterA >= 30){
+                      SetLEDDisplay(0x82);
+                      counterA = 0;
+                    }
+                   if (counterB >= 45){
+                      SetLEDDisplay(0x44);
+                      counterB = 0;
+                   }
+                }
+            if ((phi >= 0 && phi <= 30) || (phi >=-30 && phi <= 0)){
+                    if(counterC >= 1){
+                        SetLEDDisplay(0x01);
+                        counterC = 0;
+                    }
+                    if (counterA >= 5){
+                      SetLEDDisplay(0x82);
+                      counterA = 0;
+                    }
+                   if (counterB >= 15){
+                      SetLEDDisplay(0x44);
+                      counterB = 0;
+                   }
+                }
+        }
+    if(angle <= 112.5 && angle >= 67.5){
+            if ((phi >= 60 && phi <= 90) || (phi >=-90 && phi <= -60)){
+                if(counterC >= 40){
+                    SetLEDDisplay(0x02);
+                    counterC = 0;
+                }
+                if (counterA >= 80){
+                 SetLEDDisplay(0x05);
+                 counterA = 0;
+               }
+              if (counterB >= 120){
+                 SetLEDDisplay(0x88);
+                 counterB = 0;
+              }
+            }
+            if ((phi >= 30 && phi <= 60) || (phi >=-60 && phi <= -30)){
+                    if(counterC >=15){
+                        SetLEDDisplay(0x02);
+                        counterC = 0;
+                    }
+                    if (counterA >= 30){
+                     SetLEDDisplay(0x05);
+                     counterA = 0;
+                   }
+                  if (counterB >= 45){
+                     SetLEDDisplay(0x88);
+                     counterB = 0;
+                  }
+                }
+            if ((phi >= 0 && phi <= 30) || (phi >=-30 && phi <= 0)){
+                    if(counterC >= 1){
+                        SetLEDDisplay(0x02);
+                        counterC = 0;
+                    }
+                    if (counterA >= 5){
+                     SetLEDDisplay(0x05);
+                     counterA = 0;
+                   }
+                  if (counterB >= 15){
+                     SetLEDDisplay(0x88);
+                     counterB = 0;
+                  }
+                }
+        }
+    if(angle <= 157.5 && angle >= 112.5){
+            if ((phi >= 60 && phi <= 90) || (phi >=-90 && phi <= -60)){
+                if(counterC >= 40){
+                    SetLEDDisplay(0x04);
+                    counterC = 0;
+                }
+                if (counterA >= 80){
+                     SetLEDDisplay(0x0A);
+                     counterA = 0;
+                   }
+                  if (counterB >= 120){
+                     SetLEDDisplay(0x11);
+                     counterB = 0;
+                  }
+            }
+            if ((phi >= 30 && phi <= 60) || (phi >=-60 && phi <= -30)){
+                    if(counterC >= 15){
+                        SetLEDDisplay(0x04);
+                        counterC = 0;
+                    }
+                    if (counterA >= 30){
+                         SetLEDDisplay(0x0A);
+                         counterA = 0;
+                       }
+                      if (counterB >= 45){
+                         SetLEDDisplay(0x11);
+                         counterB = 0;
+                      }
+                }
+            if ((phi >= 0 && phi <= 30) || (phi >=-30 && phi <= 0)){
+                if(counterC >= 1){
+                    SetLEDDisplay(0x04);
+                    counterC = 0;
+                }
+                if (counterA >= 5){
+                     SetLEDDisplay(0x0A);
+                     counterA = 0;
+                   }
+                  if (counterB >= 15){
+                     SetLEDDisplay(0x11);
+                     counterB = 0;
+                  }
+                }
+        }
+    if((angle <= 180 && angle >= 157.5) || (angle <= -157.5 && angle >= -180)){
+
+          if ((phi >= 60 && phi <= 90) || (phi >=-90 && phi <= -60)){
+              if(counterC >= 40){
+                  SetLEDDisplay(0x08);
+                  counterC = 0;
+              }
+              if (counterA >= 80){
+                   SetLEDDisplay(0x14);
+                   counterA = 0;
+                 }
+                if (counterB >= 120){
+                   SetLEDDisplay(0x22);
+                   counterB = 0;
+                }
+          }
+          if ((phi >= 30 && phi <= 60) || (phi >=-60 && phi <= -30)){
+                  if(counterC >= 15){
+                      SetLEDDisplay(0x08);
+                      counterC = 0;
+                  }
+                  if (counterA >= 30){
+                       SetLEDDisplay(0x14);
+                       counterA = 0;
+                     }
+                    if (counterB >= 45){
+                       SetLEDDisplay(0x22);
+                       counterB = 0;
+                    }
+              }
+          if ((phi >= 0 && phi <= 30) || (phi >=-30 && phi <= 0)){
+              if(counterC >= 1){
+                  SetLEDDisplay(0x08);
+                  counterC = 0;
+              }
+              if (counterA >= 5){
+                   SetLEDDisplay(0x14);
+                   counterA = 0;
+                 }
+                if (counterB >= 15){
+                   SetLEDDisplay(0x22);
+                   counterB = 0;
+                }
+              }
+        }
+    if(angle <= -112.5 && angle >= -157.5){
+            if ((phi >= 60 && phi <= 90) || (phi >=-90 && phi <= -60)){
+                  if(counterC >= 40){
+                      SetLEDDisplay(0x10);
+                      counterC = 0;
+                  }
+                  if (counterA >= 80){
+                       SetLEDDisplay(0x28);
+                       counterA = 0;
+                     }
+                    if (counterB >= 120){
+                       SetLEDDisplay(0x44);
+                       counterB = 0;
+                    }
+              }
+              if ((phi >= 30 && phi <= 60) || (phi >=-60 && phi <= -30)){
+                      if(counterC >= 15){
+                          SetLEDDisplay(0x10);
+                          counterC = 0;
+                      }
+                      if (counterA >= 30){
+                           SetLEDDisplay(0x28);
+                           counterA = 0;
+                         }
+                        if (counterB >= 45){
+                           SetLEDDisplay(0x44);
+                           counterB = 0;
+                        }
+                  }
+              if ((phi >= 0 && phi <= 30) || (phi >=-30 && phi <= 0)){
+                  if(counterC >= 1){
+                      SetLEDDisplay(0x10);
+                      counterC = 0;
+                  }
+                  if (counterA >= 5){
+                       SetLEDDisplay(0x28);
+                       counterA = 0;
+                     }
+                    if (counterB >= 15){
+                       SetLEDDisplay(0x44);
+                       counterB = 0;
+                    }
+                  }
+        }
+    if(angle <= -67.5 && angle >= -112.5){
+              if ((phi >= 60 && phi <= 90) || (phi >=-90 && phi <= -60)){
+                  if(counterC >= 40){
+                      SetLEDDisplay(0x20);
+                      counterC = 0;
+                  }
+                  if (counterA >= 80){
+                       SetLEDDisplay(0x50);
+                       counterA = 0;
+                     }
+                    if (counterB >= 120){
+                       SetLEDDisplay(0x88);
+                       counterB = 0;
+                    }
+              }
+              if ((phi >= 30 && phi <= 60) || (phi >=-60 && phi <= -30)){
+                      if(counterC >= 15){
+                          SetLEDDisplay(0x20);
+                          counterC = 0;
+                      }
+                      if (counterA >= 30){
+                           SetLEDDisplay(0x50);
+                           counterA = 0;
+                         }
+                        if (counterB >= 45){
+                           SetLEDDisplay(0x88);
+                           counterB = 0;
+                        }
+                  }
+              if ((phi >= 0 && phi <= 30) || (phi >=-30 && phi <= 0)){
+                  if(counterC >= 1){
+                      SetLEDDisplay(0x20);
+                      counterC = 0;
+                  }
+                  if (counterA >= 5){
+                       SetLEDDisplay(0x50);
+                       counterA = 0;
+                     }
+                    if (counterB >= 15){
+                       SetLEDDisplay(0x88);
+                       counterB = 0;
+                    }
+                  }
+        }
+    if(angle <= -22.5 && angle >= -67.5){
+              if ((phi >= 60 && phi <= 90) || (phi >=-90 && phi <= -60)){
+                  if(counterC >= 40){
+                      SetLEDDisplay(0x40);
+                      counterC = 0;
+                  }
+                  if (counterA >= 80){
+                       SetLEDDisplay(0xA0);
+                       counterA = 0;
+                     }
+                    if (counterB >= 120){
+                       SetLEDDisplay(0x11);
+                       counterB = 0;
+                    }
+              }
+              if ((phi >= 30 && phi <= 60) || (phi >=-60 && phi <= -30)){
+                      if(counterC >= 15){
+                          SetLEDDisplay(0x40);
+                          counterC = 0;
+                      }
+                      if (counterA >= 30){
+                           SetLEDDisplay(0xA0);
+                           counterA = 0;
+                         }
+                        if (counterB >= 45){
+                           SetLEDDisplay(0x11);
+                           counterB = 0;
+                        }
+                  }
+              if ((phi >= 0 && phi <= 30) || (phi >=-30 && phi <= 0)){
+                  if(counterC >= 1){
+                      SetLEDDisplay(0x40);
+                      counterC = 0;
+                  }
+                  if (counterA >= 5){
+                       SetLEDDisplay(0xA0);
+                       counterA = 0;
+                     }
+                    if (counterB >= 15){
+                       SetLEDDisplay(0x11);
+                       counterB = 0;
+                    }
+                  }
+        }
+
 }
